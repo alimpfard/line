@@ -1267,7 +1267,7 @@ func vtClearLines(countAbove, countBelow uint32, w io.Writer) {
 			_, _ = w.Write([]byte(fmt.Sprintf("\x1b[%dB", countBelow)))
 		}
 		// ...and clear lines going up.
-		for i := uint32(0); i < countAbove+countBelow; i++ {
+		for i := countAbove + countBelow; i > 0; i-- {
 			_, _ = w.Write([]byte("\x1b[2K"))
 			if i != 1 {
 				_, _ = w.Write([]byte("\x1b[A"))

@@ -3,7 +3,6 @@ package line
 import (
 	"fmt"
 	"os"
-	"sort"
 )
 
 func newSuggestionDisplay() suggestionDisplay {
@@ -173,7 +172,7 @@ func (s *suggestionDisplayImpl) display(manager suggestionManager) {
 		}
 
 		vtMoveAbsolute(s.originRowValue+linesUsed, s.numColumns-uint32(len(str))-1, os.Stderr)
-		vtApplyStyle(Style{BackgroundColor: Color{Xterm8: XtermColorGreen, IsXterm: true, HasValue: true}}, os.Stderr, true)
+		vtApplyStyle(Style{BackgroundColor: MakeXtermColor(XtermColorGreen)}, os.Stderr, true)
 		_, _ = os.Stderr.WriteString(str)
 		vtApplyStyle(StyleReset, os.Stderr, true)
 	}
@@ -224,10 +223,13 @@ func (s *suggestionDisplayImpl) originRow() uint32 {
 }
 
 func (s *suggestionDisplayImpl) fitToPageBoundary(selectionIndex uint32) uint32 {
-	index := sort.Search(len(s.pages), func(i int) bool {
-		return s.pages[i].start >= selectionIndex
-	})
-
+	index := len(s.pages)
+	for i := len(s.pages) - 1; i >= 0; i-- {
+		if selectionIndex >= s.pages[i].start && selectionIndex < s.pages[i].end {
+			index = i
+			break
+		}
+	}
 	if index == len(s.pages) {
 		return uint32(len(s.pages) - 1)
 	}
