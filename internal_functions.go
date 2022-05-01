@@ -145,3 +145,10 @@ func eraseWordBackwards(editor *lineEditor) {
 		eraseCharacterBackwards(editor)
 	}
 }
+func clearScreen(editor *lineEditor) {
+	os.Stderr.Write([]byte("\x1b[3J\x1b[H\x1b[2J"))
+	vtMoveAbsolute(1, 1, os.Stderr)
+	editor.setOriginValue(1, 1)
+	editor.refreshNeeded = true
+	editor.cachedPromptValid = false
+}

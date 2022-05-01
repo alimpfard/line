@@ -140,6 +140,8 @@ func (l *lineEditor) setDefaultKeybinds() {
 	// DEL, Some terminals send this instead of ^H
 	l.RegisterKeybinding([]key{{key: 127}}, editorInternal(eraseCharacterBackwards))
 
+	l.RegisterKeybinding([]key{{key: ctrl('L')}}, editorInternal(clearScreen))
+
 	l.RegisterKeybinding([]key{{key: '\n'}}, editorInternal(finish))
 	l.RegisterKeybinding([]key{{key: '\b', modifiers: ModifierAlt}}, editorInternal(eraseAlnumWordBackwards))
 	l.RegisterKeybinding([]key{{key: 'd', modifiers: ModifierAlt}}, editorInternal(eraseAlnumWordForwards))
