@@ -91,13 +91,16 @@ type lineEditor struct {
 	prohibitInputProcessing  bool
 	haveUnprocessedReadEvent bool
 
-	loopChan  chan loopExitCode
-	laterChan chan laterEventCode
+	loopChan   chan loopExitCode
+	laterChan  chan laterEventCode
+	signalChan chan os.Signal
 
 	onInterruptHandled   func()
 	tabCompletionHandler TabCompletionHandler
 	pasteHandler         PasteHandler
 	onRefresh            func(editor Editor)
+
+	enableSignalHandling bool
 }
 
 type loopExitCode int
@@ -136,17 +139,40 @@ func editorInternal(fn func(editor *lineEditor)) func([]key, Editor) bool {
 }
 
 func (l *lineEditor) setDefaultKeybinds() {
+	l.RegisterKeybinding([]key{{key: ctrl('N')}}, editorInternal(searchForwards))
+	l.RegisterKeybinding([]key{{key: ctrl('P')}}, editorInternal(searchBackwards))
+	l.RegisterKeybinding([]key{{key: ctrl('A')}}, editorInternal(goHome))
+	l.RegisterKeybinding([]key{{key: ctrl('B')}}, editorInternal(cursorLeftCharacter))
+	l.RegisterKeybinding([]key{{key: ctrl('D')}}, editorInternal(eraseCharacterForwards))
+	l.RegisterKeybinding([]key{{key: ctrl('E')}}, editorInternal(goEnd))
+	l.RegisterKeybinding([]key{{key: ctrl('F')}}, editorInternal(cursorRightCharacter))
+	// ^H: ctrl('H') = \b
 	l.RegisterKeybinding([]key{{key: ctrl('H')}}, editorInternal(eraseCharacterBackwards))
 	// DEL, Some terminals send this instead of ^H
 	l.RegisterKeybinding([]key{{key: 127}}, editorInternal(eraseCharacterBackwards))
-
+	l.RegisterKeybinding([]key{{key: ctrl('K')}}, editorInternal(eraseToEnd))
 	l.RegisterKeybinding([]key{{key: ctrl('L')}}, editorInternal(clearScreen))
-
+	l.RegisterKeybinding([]key{{key: ctrl('R')}}, editorInternal(enterSearch))
+	l.RegisterKeybinding([]key{{key: ctrl('T')}}, editorInternal(transposeCharacters))
 	l.RegisterKeybinding([]key{{key: '\n'}}, editorInternal(finish))
+
+	l.RegisterKeybinding([]key{{key: ctrl('X')}, {key: ctrl('E')}}, editorInternal(editInExternalEditor))
+
+	// ^[.: alt-.: insert last arg of previous command (similar to `!$` in shells)
+	l.RegisterKeybinding([]key{{key: '.', modifiers: ModifierAlt}}, editorInternal(insertLastWords))
+
+	l.RegisterKeybinding([]key{{key: 'b', modifiers: ModifierAlt}}, editorInternal(cursorLeftCharacter))
+	l.RegisterKeybinding([]key{{key: 'f', modifiers: ModifierAlt}}, editorInternal(cursorRightCharacter))
+	// ^[^H: alt-backspace: backward delete word
 	l.RegisterKeybinding([]key{{key: '\b', modifiers: ModifierAlt}}, editorInternal(eraseAlnumWordBackwards))
 	l.RegisterKeybinding([]key{{key: 'd', modifiers: ModifierAlt}}, editorInternal(eraseAlnumWordForwards))
+	l.RegisterKeybinding([]key{{key: 'c', modifiers: ModifierAlt}}, editorInternal(capitalizeWord))
+	l.RegisterKeybinding([]key{{key: 'l', modifiers: ModifierAlt}}, editorInternal(lowercaseWord))
+	l.RegisterKeybinding([]key{{key: 'u', modifiers: ModifierAlt}}, editorInternal(uppercaseWord))
+	l.RegisterKeybinding([]key{{key: 't', modifiers: ModifierAlt}}, editorInternal(transposeWords))
 
 	l.RegisterKeybinding([]key{{key: uint32(l.termios.Cc[syscall.VWERASE])}}, editorInternal(eraseWordBackwards))
+	l.RegisterKeybinding([]key{{key: uint32(l.termios.Cc[syscall.VKILL])}}, editorInternal(killLine))
 	l.RegisterKeybinding([]key{{key: uint32(l.termios.Cc[syscall.VERASE])}}, editorInternal(eraseCharacterBackwards))
 }
 
@@ -582,23 +608,27 @@ func (l *lineEditor) GetLine(prompt string) (string, error) {
 			}
 
 			l.laterChan <- laterEventCodeTryUpdateOnce
-
 		}
 	}()
 
 	if len(l.incompleteData) != 0 {
-
 		l.laterChan <- laterEventCodeTryUpdateOnce
-
 	}
 
-	c := make(chan os.Signal, 1)
-	defer close(c)
-	signal.Notify(c, unix.SIGWINCH, unix.SIGINT)
+	l.signalChan = make(chan os.Signal, 1)
+	defer func() {
+		if l.enableSignalHandling {
+			signal.Stop(l.signalChan)
+		}
+		close(l.signalChan)
+	}()
+	if l.enableSignalHandling {
+		signal.Notify(l.signalChan, unix.SIGWINCH, unix.SIGINT)
+	}
 
 	for {
 		select {
-		case sig := <-c:
+		case sig := <-l.signalChan:
 			if sig == unix.SIGWINCH {
 				l.resized()
 			} else if sig == unix.SIGINT {
@@ -1808,4 +1838,61 @@ func (l *lineEditor) removeAtIndex(index uint32) {
 		l.extraForwardLines++
 	}
 	l.charsTouchedInTheMiddle++
+}
+
+func (l *lineEditor) search(phrase string, allowEmpty bool, fromBeginning bool) bool {
+	lastMatchingOffset := -1
+	found := false
+
+	// Do not search for empty strings.
+	if allowEmpty || len(phrase) > 0 {
+		searchOffset := l.searchOffset
+		for i := l.historyCursor; i > 0; i-- {
+			entry := &l.history[i-1]
+			contains := false
+			if fromBeginning {
+				contains = strings.HasPrefix(entry.entry, phrase)
+			} else {
+				contains = strings.HasSuffix(entry.entry, phrase)
+			}
+
+			if contains {
+				lastMatchingOffset = int(i - 1)
+				if searchOffset == 0 {
+					found = true
+					break
+				}
+				searchOffset--
+			}
+		}
+
+		if !found {
+			os.Stderr.Write([]byte("\a"))
+		}
+	}
+
+	if found {
+		// We plan to clear the buffer, so mark the entire thing as touched.
+		l.charsTouchedInTheMiddle = uint32(len(l.buffer))
+		l.buffer = l.buffer[:0]
+		l.cursor = 0
+		l.InsertString(l.history[lastMatchingOffset].entry)
+		// Always needed, as we have cleared the buffer.
+		l.refreshNeeded = true
+	}
+
+	return found
+}
+
+func (l *lineEditor) endSearch() {
+	l.isSearching = false
+	l.refreshNeeded = true
+	l.searchOffset = 0
+	if l.resetBufferOnSearchEnd {
+		l.buffer = l.buffer[:0]
+		l.buffer = append(l.buffer, l.preSearchBuffer...)
+		l.cursor = l.preSearchCursor
+	}
+	l.resetBufferOnSearchEnd = true
+	l.searchEditor = nil
 }

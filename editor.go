@@ -9,8 +9,9 @@ func NewEditor() Editor {
 			spansStarting: map[uint32]map[uint32]Style{},
 			spansEnding:   map[uint32]map[uint32]Style{},
 		},
-		state:             inputStateFree,
-		previousFreeState: inputStateFree,
+		state:                inputStateFree,
+		previousFreeState:    inputStateFree,
+		enableSignalHandling: true,
 	}
 	editor.getTerminalSize()
 	editor.suggestionDisplay.setVTSize(editor.numLines, editor.numColumns)
