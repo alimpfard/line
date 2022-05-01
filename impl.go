@@ -1491,7 +1491,7 @@ func (l *lineEditor) handleReadEvent() {
 			switch l.state {
 			case inputStateGotEscape:
 				switch codePoint {
-				case ']':
+				case '[':
 					l.state = inputStateCSIExpectParameter
 					return iterationDecisionContinue
 				default:
@@ -1568,10 +1568,10 @@ func (l *lineEditor) handleReadEvent() {
 
 				switch csiFinal {
 				case 'A': // ^[[A: Arrow up
-					// l.searchBackwards()
+					searchBackwards(l)
 					return iterationDecisionContinue
 				case 'B': // ^[[B: Arrow down
-					// l.searchForwards()
+					searchForwards(l)
 					return iterationDecisionContinue
 				case 'D': // ^[[D: Arrow left
 					if modifiers == ModifierAlt || modifiers == ModifierCtrl {
