@@ -798,7 +798,7 @@ func (l *lineEditor) Stylize(span Span, style Style) {
 		startingMap = map[uint32]Style{}
 		spansStarting[start] = startingMap
 	}
-	if _, ok = startingMap[end]; ok {
+	if _, ok = startingMap[end]; !ok {
 		l.refreshNeeded = true
 	}
 	startingMap[end] = style
@@ -808,7 +808,7 @@ func (l *lineEditor) Stylize(span Span, style Style) {
 		endingMap = map[uint32]Style{}
 		spansEnding[end] = endingMap
 	}
-	if _, ok = endingMap[start]; ok {
+	if _, ok = endingMap[start]; !ok {
 		l.refreshNeeded = true
 	}
 	endingMap[start] = style
