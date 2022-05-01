@@ -22,7 +22,6 @@ func finishEdit(editor *lineEditor) {
 	if !editor.alwaysRefresh {
 		editor.inputError = syscall.ECANCELED
 		editor.Finish()
-		editor.reallyQuitEventLoop()
 	}
 }
 
