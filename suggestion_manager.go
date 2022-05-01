@@ -58,7 +58,7 @@ func (s *suggestionManagerImpl) setCurrentSuggestionInitiationIndex(index uint32
 	}
 
 	s.lastShownSuggestionDisplayLength = uint32(len(s.lastShownSuggestion.textView))
-	s.lastShownSuggestionWasComplete = false
+	s.lastShownSuggestionWasComplete = true
 }
 
 func (s *suggestionManagerImpl) count() uint32 {

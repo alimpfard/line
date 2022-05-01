@@ -28,6 +28,8 @@ type suggestionDisplayImpl struct {
 }
 
 func (s *suggestionDisplayImpl) display(manager suggestionManager) {
+	s.isShowingSuggestions = true
+
 	longestSuggestionLength := uint32(0)
 	longestSuggestionByteLength := uint32(0)
 	longestSuggestionByteLengthWithoutTrivia := uint32(0)
@@ -41,7 +43,7 @@ func (s *suggestionDisplayImpl) display(manager suggestionManager) {
 	})
 
 	numPrinted := uint32(0)
-	linesUsed := uint32(0)
+	linesUsed := uint32(1)
 
 	vtSaveCursor(os.Stderr)
 	vtClearLines(0, s.linesUsedForLastSuggestion, os.Stderr)
@@ -123,7 +125,7 @@ func (s *suggestionDisplayImpl) display(manager suggestionManager) {
 
 		// Only apply color to selection if something is actually added to the buffer
 		if manager.isCurrentSuggestionComplete() && index == manager.nextIndex() {
-			vtApplyStyle(Style{ForegroundColor: Color{Xterm8: XtermColorBlue, IsXterm: true, HasValue: true}}, os.Stderr, true)
+			vtApplyStyle(Style{ForegroundColor: MakeXtermColor(XtermColorBlue)}, os.Stderr, true)
 		}
 
 		if spansEntireLine {
