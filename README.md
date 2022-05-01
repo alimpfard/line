@@ -1,6 +1,6 @@
 # (Lib)Line
 
-A full reimplementation of SerenityOS's [LibLine](https://github.com/serenityos/serenity/Userland/Libraries/LibLine) in Go.
+A full reimplementation of SerenityOS's [LibLine](https://github.com/SerenityOS/serenity/tree/master/Userland/Libraries/LibLine) in Go.
 
 LibLine is a full-featured terminal line editor with support for:
 - Flexible autocompletion
