@@ -15,7 +15,7 @@ import (
 	"unicode/utf8"
 )
 
-const enableBracketedPaste = false
+const enableBracketedPaste = true
 
 type lineEditor struct {
 	finish                 bool
@@ -257,6 +257,9 @@ func (l *lineEditor) repositionCursor(stream io.Writer, toEnd bool) {
 
 func (l *lineEditor) restore() {
 	_ = unix.IoctlSetTermios(unix.Stdin, unix.TCSETS, &l.defaultTermios)
+	if enableBracketedPaste {
+		os.Stderr.Write([]byte("\x1b[?2004l"))
+	}
 	l.initialized = false
 }
 
@@ -557,6 +560,10 @@ func (l *lineEditor) GetLine(prompt string) (string, error) {
 	oldCols := l.numColumns
 	oldLines := l.numLines
 	l.getTerminalSize()
+
+	if enableBracketedPaste {
+		os.Stderr.Write([]byte("\x1b[?2004h"))
+	}
 
 	if l.numColumns != oldCols || l.numLines != oldLines {
 		l.refreshNeeded = true
@@ -1612,7 +1619,13 @@ func (l *lineEditor) handleReadEvent() {
 						}
 						if isInPaste && param1 == 201 {
 							l.state = inputStateFree
-							// FIXME: invoke paste callback or insert
+							if l.pasteHandler != nil {
+								l.pasteHandler(string(l.pasteBuffer), l)
+								l.pasteBuffer = l.pasteBuffer[:0]
+							}
+							if len(l.pasteBuffer) != 0 {
+								l.InsertString(string(l.pasteBuffer))
+							}
 							return iterationDecisionContinue
 						}
 						fmt.Fprintf(os.Stderr, "Unknown '~': %d\n", param1)
@@ -1635,7 +1648,11 @@ func (l *lineEditor) handleReadEvent() {
 					l.state = inputStateGotEscape
 					return iterationDecisionContinue
 				}
-				// FIXME: Invoke paste callback or insert
+				if l.pasteHandler != nil {
+					l.pasteBuffer = append(l.pasteBuffer, codePoint)
+				} else {
+					l.InsertChar(codePoint)
+				}
 				return iterationDecisionContinue
 			case inputStateFree:
 				l.previousFreeState = inputStateFree
