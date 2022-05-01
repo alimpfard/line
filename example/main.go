@@ -60,5 +60,6 @@ func main() {
 		if line == "exit" {
 			break
 		}
+		editor.AddToHistory(line)
 	}
 }
