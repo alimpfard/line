@@ -1387,6 +1387,11 @@ func (l *lineEditor) handleReadEvent() {
 		if err == nil && nread == 0 {
 			return
 		}
+		// FIXME: Somehow this sneaks in here when the user presses Ctrl-C
+		if nread == 1 && keyBuf[0] == byte(ctrl('C')) {
+			l.handleInterruptEvent()
+			return
+		}
 	}
 
 	if err != nil {
