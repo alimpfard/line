@@ -1235,9 +1235,9 @@ func (c *Color) toVTString(foreground bool) string {
 		return ""
 	}
 
-	x := 30
+	x := 40
 	if foreground {
-		x = 40
+		x = 30
 	}
 	if c.IsXterm {
 		return fmt.Sprintf("\x1b[%dm", int(c.Xterm8)+x)
