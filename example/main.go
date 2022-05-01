@@ -43,6 +43,10 @@ func main() {
 				Text:         "lol no actual completions",
 				StaticOffset: uint32(len(parts[len(parts)-1])),
 			},
+			{
+				Text:         "no really, no actual completions",
+				StaticOffset: uint32(len(parts[len(parts)-1])),
+			},
 		}
 	})
 
