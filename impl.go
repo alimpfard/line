@@ -779,6 +779,10 @@ func (l *lineEditor) Stylize(span Span, style Style) {
 	start := span.Start
 	end := span.End
 
+	if start == end {
+		return
+	}
+
 	if span.Mode == SpanModeByte {
 		start, end = l.byteOffsetRangeToCodePointOffsetRange(start, end, 0, false)
 	}
