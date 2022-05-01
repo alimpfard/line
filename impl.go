@@ -230,7 +230,7 @@ func (l *lineEditor) repositionCursor(stream io.Writer, toEnd bool) {
 }
 
 func (l *lineEditor) restore() {
-	_ = unix.IoctlSetTermios(unix.Stdin, unix.TCSETA, &l.defaultTermios)
+	_ = unix.IoctlSetTermios(unix.Stdin, unix.TCSETS, &l.defaultTermios)
 	l.initialized = false
 }
 
