@@ -192,7 +192,7 @@ func searchBackwards(editor *lineEditor) {
 	if editor.searchOffsetState == searchOffsetStateForwards {
 		editor.searchOffset++
 	}
-	if editor.search(searchPhrase, false, true) {
+	if editor.search(searchPhrase, true, true) {
 		editor.searchOffsetState = searchOffsetStateBackwards
 		editor.searchOffset++
 	} else {
@@ -236,8 +236,8 @@ func enterSearch(editor *lineEditor) {
 
 		editor.refreshDisplay()
 
-		// Move the serach prompt below ours and tell it to redraw itself.
-		promptEndLine := editor.CurrentPromptMetrics().LinesWithAddition(&editor.cachedPromptMetrics, editor.numLines)
+		// Move the search prompt below ours and tell it to redraw itself.
+		promptEndLine := editor.CurrentPromptMetrics().LinesWithAddition(&editor.cachedBufferMetrics, editor.numColumns)
 		editor.searchEditor.setOriginValue(promptEndLine+editor.originRow, 1)
 		editor.searchEditor.refreshNeeded = true
 	}

@@ -231,7 +231,7 @@ func (l *lineEditor) ensureFreeLinesFromOrigin(count uint32) {
 	diff := l.originRow + count - l.numLines - 1
 	os.Stderr.Write([]byte(fmt.Sprintf("\x1b[%dS", diff)))
 	l.originRow -= diff
-	l.refreshNeeded = true
+	l.refreshNeeded = false
 	l.charsTouchedInTheMiddle = 0
 }
 
@@ -1853,7 +1853,7 @@ func (l *lineEditor) search(phrase string, allowEmpty bool, fromBeginning bool) 
 			if fromBeginning {
 				contains = strings.HasPrefix(entry.entry, phrase)
 			} else {
-				contains = strings.HasSuffix(entry.entry, phrase)
+				contains = strings.Contains(entry.entry, phrase)
 			}
 
 			if contains {
