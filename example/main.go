@@ -21,6 +21,7 @@ func main() {
 					Mode:  line.SpanModeRune,
 				}, line.Style{
 					ForegroundColor: line.MakeXtermColor(line.XtermColorBlue),
+					Mask:            line.NewMask("r", line.MaskModeReplaceEachCodePointInSelection),
 				})
 			}
 		}

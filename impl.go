@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -16,6 +17,11 @@ import (
 )
 
 const enableBracketedPaste = true
+
+type maskEntry struct {
+	start uint32
+	mask  *Mask
+}
 
 type lineEditor struct {
 	finish                 bool
@@ -101,6 +107,8 @@ type lineEditor struct {
 	onRefresh            func(editor Editor)
 
 	enableSignalHandling bool
+
+	currentMasks []maskEntry
 }
 
 type loopExitCode int
@@ -205,7 +213,7 @@ func (l *lineEditor) cursorLine() uint32 {
 	if cursor > l.cursor {
 		cursor = l.cursor
 	}
-	metrics := l.ActualRenderedStringMetrics(string(l.buffer[:cursor]))
+	metrics := l.actualRenderedStringMetricsImpl(string(l.buffer[:cursor]), l.currentMasks)
 	return l.CurrentPromptMetrics().LinesWithAddition(&metrics, l.numColumns)
 }
 
@@ -214,7 +222,7 @@ func (l *lineEditor) offsetInLine() uint32 {
 	if cursor > l.cursor {
 		cursor = l.cursor
 	}
-	metrics := l.ActualRenderedStringMetrics(string(l.buffer[:cursor]))
+	metrics := l.actualRenderedStringMetricsImpl(string(l.buffer[:cursor]), l.currentMasks)
 	return l.CurrentPromptMetrics().OffsetWithAddition(&metrics, l.numColumns)
 }
 
@@ -523,6 +531,13 @@ func max(a, b uint32) uint32 {
 	return b
 }
 
+func min(a, b uint32) uint32 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 func (l *lineEditor) CurrentPromptMetrics() *StringMetrics {
 	if l.cachedPromptValid {
 		return &l.cachedPromptMetrics
@@ -725,25 +740,77 @@ const (
 )
 
 func (l *lineEditor) ActualRenderedStringMetrics(line string) StringMetrics {
+	return l.actualRenderedStringMetricsImpl(line, []maskEntry{})
+}
+
+func (l *lineEditor) actualRenderedStringMetricsImpl(line string, masks []maskEntry) StringMetrics {
 	metrics := StringMetrics{}
 	currentLine := LineMetrics{}
 	state := VTStateFree
 	runes := []rune(line)
 	byteOffset := 0
+	var mask *Mask
+	maskIt := 0
 
-	for i, r := range runes {
-		c := r
+	for i := 0; i < len(runes); i++ {
+		c := runes[i]
+		if maskIt < len(masks) && masks[maskIt].start <= uint32(i) {
+			mask = masks[maskIt].mask
+		}
+
+		if mask != nil && mask.mode == MaskModeReplaceEntireSelection {
+			maskIt++
+			actualEndOffset := uint32(len(runes))
+			if maskIt < len(masks) {
+				actualEndOffset = masks[maskIt].start
+			}
+			endOffset := min(actualEndOffset, uint32(len(runes)))
+			j := 0
+			for it := 0; it != len(mask.replacementView); it++ {
+				itCopy := it
+				itCopy++
+				nextC := rune(0)
+				if itCopy < len(mask.replacementView) {
+					nextC = mask.replacementView[itCopy]
+				}
+				state = l.actualRenderedStringLengthStep(&metrics, j, &currentLine, mask.replacementView[it], nextC, state, nil)
+				j++
+				if uint32(j) <= actualEndOffset-uint32(i) && j+i >= len(runes) {
+					break
+				}
+			}
+			currentLine.MaskedChars = append(currentLine.MaskedChars, MaskedChar{
+				Position:       uint32(i),
+				OriginalLength: endOffset - uint32(i),
+				MaskedLength:   uint32(j),
+			})
+			i = int(endOffset - 1)
+
+			if maskIt == len(masks) {
+				mask = nil
+			} else {
+				mask = masks[maskIt].mask
+			}
+			continue
+		}
+
 		nextC := rune(0)
 		if i+1 < len(runes) {
 			nextC = runes[i+1]
 		}
-		state = l.actualRenderedStringLengthStep(&metrics, byteOffset, &currentLine, c, nextC, state)
+		state = l.actualRenderedStringLengthStep(&metrics, byteOffset, &currentLine, c, nextC, state, mask)
 		byteOffset += utf8.RuneLen(c)
+		if maskIt < len(masks) && masks[maskIt].start == uint32(i) {
+			maskItPeek := maskIt + 1
+			if maskItPeek < len(masks) && masks[maskItPeek].start > uint32(i) {
+				maskIt = maskItPeek
+			}
+		}
 	}
 
 	metrics.LineMetrics = append(metrics.LineMetrics, currentLine)
 	for _, lineMetric := range metrics.LineMetrics {
-		metrics.MaxLineLength = max(lineMetric.TotalLength(-1), metrics.MaxLineLength)
+		metrics.MaxLineLength = max(lineMetric.TotalLength(), metrics.MaxLineLength)
 	}
 
 	return metrics
@@ -808,6 +875,22 @@ func (l *lineEditor) InsertChar(ch rune) {
 	l.inlineSearchCursor = l.cursor
 }
 
+type sortableMaskEntrySlice struct {
+	entries []maskEntry
+}
+
+func (s *sortableMaskEntrySlice) Len() int {
+	return len(s.entries)
+}
+
+func (s *sortableMaskEntrySlice) Less(i, j int) bool {
+	return s.entries[i].start < s.entries[j].start
+}
+
+func (s *sortableMaskEntrySlice) Swap(i, j int) {
+	s.entries[i], s.entries[j] = s.entries[j], s.entries[i]
+}
+
 func (l *lineEditor) Stylize(span Span, style Style) {
 	if style.IsEmpty() {
 		return
@@ -822,6 +905,49 @@ func (l *lineEditor) Stylize(span Span, style Style) {
 
 	if span.Mode == SpanModeByte {
 		start, end = l.byteOffsetRangeToCodePointOffsetRange(start, end, 0, false)
+	}
+
+	mask := style.Mask
+
+	if mask != nil {
+		i := len(l.currentMasks)
+		for j := len(l.currentMasks); j > 0; j-- {
+			e := l.currentMasks[j-1]
+			if e.start < start {
+				break
+			}
+			i = j - 1
+		}
+		var lastEncounteredEntry *Mask
+		if i != len(l.currentMasks) {
+			// Delete all overlapping old masks
+			for {
+				nextI := len(l.currentMasks)
+				for j, e := range l.currentMasks {
+					if e.start > start {
+						break
+					}
+					nextI = j
+				}
+				if nextI == len(l.currentMasks) {
+					break
+				}
+				entry := &l.currentMasks[nextI]
+				if entry.mask != nil {
+					lastEncounteredEntry = entry.mask
+				}
+				l.currentMasks = append(l.currentMasks[:nextI], l.currentMasks[nextI+1:]...)
+			}
+		}
+		l.currentMasks = append(l.currentMasks, []maskEntry{{start, mask}, {end, nil}}...)
+		if lastEncounteredEntry != nil {
+			l.currentMasks = append(l.currentMasks, maskEntry{end + 1, lastEncounteredEntry})
+		}
+
+		sortable := &sortableMaskEntrySlice{l.currentMasks}
+		sort.Sort(sortable)
+		l.currentMasks = sortable.entries
+		style.Mask = nil
 	}
 
 	spansStarting := l.currentSpans.spansStarting
@@ -860,6 +986,7 @@ func (l *lineEditor) Stylize(span Span, style Style) {
 
 func (l *lineEditor) StripStyles() {
 	l.currentSpans = spans{}
+	l.currentMasks = l.currentMasks[:0]
 	l.refreshNeeded = true
 }
 
@@ -924,7 +1051,7 @@ func (l *lineEditor) recalculateOrigin() {
 }
 
 func (l *lineEditor) cleanup() {
-	currentBufferMetrics := l.ActualRenderedStringMetrics(string(l.buffer))
+	currentBufferMetrics := l.actualRenderedStringMetricsImpl(string(l.buffer), l.currentMasks)
 	newLines := l.CurrentPromptMetrics().LinesWithAddition(&currentBufferMetrics, l.numColumns)
 	shownLines := l.NumLines()
 	if newLines < shownLines {
@@ -990,7 +1117,7 @@ func (l *lineEditor) refreshDisplay() {
 	if l.cachedPromptValid && !l.refreshNeeded && len(l.pendingChars) == 0 {
 		// Probably just moving around
 		l.repositionCursor(outputBuffer, false)
-		l.cachedBufferMetrics = l.ActualRenderedStringMetrics(string(l.buffer))
+		l.cachedBufferMetrics = l.actualRenderedStringMetricsImpl(string(l.buffer), l.currentMasks)
 		l.drawnEndOfLineOffset = uint32(len(l.buffer))
 		return
 	}
@@ -1007,7 +1134,7 @@ func (l *lineEditor) refreshDisplay() {
 			l.pendingChars = []byte{}
 			l.drawnCursor = l.cursor
 			l.drawnEndOfLineOffset = uint32(len(l.buffer))
-			l.cachedBufferMetrics = l.ActualRenderedStringMetrics(string(l.buffer))
+			l.cachedBufferMetrics = l.actualRenderedStringMetricsImpl(string(l.buffer), l.currentMasks)
 			l.drawnSpans = l.currentSpans
 			return
 		}
@@ -1038,24 +1165,65 @@ func (l *lineEditor) refreshDisplay() {
 	}
 
 	printCharacterAt := func(i uint32) {
-		c := l.buffer[i]
-		shouldPrintMasked := c == 0x7f || c < 0x20 && c != '\n'
-		shouldPrintCaret := c < 64 && shouldPrintMasked
-		s := ""
-		if shouldPrintCaret {
-			s = "^" + string(c+64)
-		} else if shouldPrintMasked {
-			s = "\\x" + strconv.FormatInt(int64(c), 16)
+		var c interface{}
+		it := len(l.currentMasks)
+		for j, e := range l.currentMasks {
+			if e.start > i {
+				break
+			}
+			it = j
+		}
+		if it < len(l.currentMasks) && l.currentMasks[it].mask != nil {
+			offset := i - l.currentMasks[it].start
+			mask := l.currentMasks[it].mask
+			if mask.mode == MaskModeReplaceEntireSelection {
+				v := mask.replacementView
+				if offset >= uint32(len(v)) {
+					return
+				}
+				c = v[offset]
+				it++
+				nextOffset := l.drawnEndOfLineOffset
+				if it < len(l.currentMasks) {
+					nextOffset = l.currentMasks[it].start
+				}
+				if i+1 == nextOffset {
+					c = v[offset : len(v)-1]
+				}
+			} else {
+				c = mask.replacementView
+			}
 		} else {
-			s = string(c)
+			c = l.buffer[i]
+		}
+		printSingleCharacter := func(c rune) {
+			shouldPrintMasked := c == 0x7f || c < 0x20 && c != '\n'
+			shouldPrintCaret := c < 64 && shouldPrintMasked
+			s := ""
+			if shouldPrintCaret {
+				s = "^" + string(c+64)
+			} else if shouldPrintMasked {
+				s = "\\x" + strconv.FormatInt(int64(c), 16)
+			} else {
+				s = string(c)
+			}
+
+			if shouldPrintMasked {
+				outputBuffer.WriteString("\x1b[7m")
+			}
+			outputBuffer.WriteString(s)
+			if shouldPrintMasked {
+				outputBuffer.WriteString("\x1b[27m")
+			}
 		}
 
-		if shouldPrintMasked {
-			outputBuffer.WriteString("\x1b[7m")
-		}
-		outputBuffer.WriteString(s)
-		if shouldPrintMasked {
-			outputBuffer.WriteString("\x1b[27m")
+		switch c.(type) {
+		case rune:
+			printSingleCharacter(c.(rune))
+		case []rune:
+			for _, r := range c.([]rune) {
+				printSingleCharacter(r)
+			}
 		}
 	}
 
@@ -1071,7 +1239,7 @@ func (l *lineEditor) refreshDisplay() {
 		vtApplyStyle(StyleReset, outputBuffer, true)
 		l.pendingChars = []byte{}
 		l.refreshNeeded = false
-		l.cachedBufferMetrics = l.ActualRenderedStringMetrics(string(l.buffer))
+		l.cachedBufferMetrics = l.actualRenderedStringMetricsImpl(string(l.buffer), l.currentMasks)
 		l.charsTouchedInTheMiddle = 0
 		l.drawnCursor = l.cursor
 		l.drawnEndOfLineOffset = uint32(len(l.buffer))
@@ -1099,7 +1267,7 @@ func (l *lineEditor) refreshDisplay() {
 
 	l.pendingChars = []byte{}
 	l.refreshNeeded = false
-	l.cachedBufferMetrics = l.ActualRenderedStringMetrics(string(l.buffer))
+	l.cachedBufferMetrics = l.actualRenderedStringMetricsImpl(string(l.buffer), l.currentMasks)
 	l.charsTouchedInTheMiddle = 0
 	l.drawnSpans = l.currentSpans
 	l.drawnEndOfLineOffset = uint32(len(l.buffer))
@@ -1131,7 +1299,7 @@ func (l *lineEditor) findApplicableStyle(offset uint32) Style {
 	return style
 }
 
-func (l *lineEditor) actualRenderedStringLengthStep(metrics *StringMetrics, index int, currentLine *LineMetrics, c, nextC rune, state VTState) VTState {
+func (l *lineEditor) actualRenderedStringLengthStep(metrics *StringMetrics, index int, currentLine *LineMetrics, c, nextC rune, state VTState, mask *Mask) VTState {
 	switch state {
 	case VTStateFree:
 		if c == '\x1b' {
@@ -1151,19 +1319,38 @@ func (l *lineEditor) actualRenderedStringLengthStep(metrics *StringMetrics, inde
 			currentLine.Length = 0
 			return state
 		}
+		maskedLength := 0
+		isControl := false
 		if c == 0x7f || c < 0x20 {
-			maskedLength := 2
-			if c > 64 {
-				maskedLength = 4
+			isControl = true
+			if mask != nil {
+				currentLine.MaskedChars = append(currentLine.MaskedChars, MaskedChar{
+					Position:       uint32(index),
+					OriginalLength: 1,
+					MaskedLength:   uint32(len(mask.replacementView)),
+				})
+			} else {
+				maskedLength = 2
+				if c > 64 {
+					maskedLength = 4
+				}
+				currentLine.MaskedChars = append(currentLine.MaskedChars, MaskedChar{
+					Position:       uint32(index),
+					OriginalLength: 1,
+					MaskedLength:   uint32(maskedLength),
+				})
 			}
-			currentLine.MaskedChars = append(currentLine.MaskedChars, MaskedChar{
-				Position:       uint32(index),
-				OriginalLength: 1,
-				MaskedLength:   uint32(maskedLength),
-			})
 		}
-		currentLine.Length++
-		metrics.TotalLength++
+		if mask != nil {
+			currentLine.Length += uint32(len(mask.replacementView))
+			metrics.TotalLength += uint32(len(mask.replacementView))
+		} else if isControl {
+			currentLine.Length += uint32(maskedLength)
+			metrics.TotalLength += uint32(maskedLength)
+		} else {
+			currentLine.Length++
+			metrics.TotalLength++
+		}
 		return state
 	case VTStateEscape:
 		if c == ']' {

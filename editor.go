@@ -122,6 +122,27 @@ type Color struct {
 
 type Hyperlink string
 
+type MaskMode int
+
+const (
+	MaskModeReplaceEntireSelection MaskMode = iota
+	MaskModeReplaceEachCodePointInSelection
+)
+
+type Mask struct {
+	replacement     string
+	replacementView []rune
+	mode            MaskMode
+}
+
+func NewMask(replacement string, mode MaskMode) *Mask {
+	return &Mask{
+		replacement:     replacement,
+		replacementView: []rune(replacement),
+		mode:            mode,
+	}
+}
+
 type Style struct {
 	ForegroundColor Color
 	BackgroundColor Color
@@ -129,6 +150,7 @@ type Style struct {
 	Italic          bool
 	Underline       bool
 	Hyperlink       Hyperlink
+	Mask            *Mask
 }
 
 var StyleReset = Style{
@@ -294,29 +316,22 @@ type suggestionManager interface {
 	reset()
 }
 
-func (m *LineMetrics) TotalLength(offset int64) uint32 {
-	length := m.Length
-	for _, maskedChar := range m.MaskedChars {
-		if offset < 0 || maskedChar.Position <= uint32(offset) {
-			length -= maskedChar.OriginalLength
-			length += maskedChar.MaskedLength
-		}
-	}
-	return length
+func (m *LineMetrics) TotalLength() uint32 {
+	return m.Length
 }
 
 func (m *StringMetrics) LinesWithAddition(offset *StringMetrics, columnWidth uint32) uint32 {
 	lines := uint32(0)
 	for _, line := range m.LineMetrics[:len(m.LineMetrics)-1] {
-		lines += (line.TotalLength(-1) + columnWidth) / columnWidth
+		lines += (line.TotalLength() + columnWidth) / columnWidth
 	}
 
-	last := m.LineMetrics[len(m.LineMetrics)-1].TotalLength(-1)
-	last += offset.LineMetrics[0].TotalLength(-1)
+	last := m.LineMetrics[len(m.LineMetrics)-1].TotalLength()
+	last += offset.LineMetrics[0].TotalLength()
 	lines += (last + columnWidth) / columnWidth
 
 	for _, line := range offset.LineMetrics[1:] {
-		lines += (line.TotalLength(-1) + columnWidth) / columnWidth
+		lines += (line.TotalLength() + columnWidth) / columnWidth
 	}
 
 	return lines
@@ -324,11 +339,11 @@ func (m *StringMetrics) LinesWithAddition(offset *StringMetrics, columnWidth uin
 
 func (m *StringMetrics) OffsetWithAddition(offset *StringMetrics, columnWidth uint32) uint32 {
 	if len(offset.LineMetrics) > 1 {
-		return offset.LineMetrics[len(offset.LineMetrics)-1].TotalLength(-1) % columnWidth
+		return offset.LineMetrics[len(offset.LineMetrics)-1].TotalLength() % columnWidth
 	}
 
-	last := m.LineMetrics[len(m.LineMetrics)-1].TotalLength(-1)
-	last += offset.LineMetrics[0].TotalLength(-1)
+	last := m.LineMetrics[len(m.LineMetrics)-1].TotalLength()
+	last += offset.LineMetrics[0].TotalLength()
 	return last % columnWidth
 }
 
@@ -345,7 +360,8 @@ func (s *Style) IsEmpty() bool {
 		!s.Bold &&
 		!s.Italic &&
 		!s.Underline &&
-		len(s.Hyperlink) == 0
+		len(s.Hyperlink) == 0 &&
+		s.Mask == nil
 }
 
 func (s *Style) UnifyWith(other Style) {
@@ -355,4 +371,7 @@ func (s *Style) UnifyWith(other Style) {
 	s.Italic = s.Italic || other.Italic
 	s.Underline = s.Underline || other.Underline
 	s.Hyperlink = other.Hyperlink
+	if other.Mask != nil {
+		s.Mask = other.Mask
+	}
 }
