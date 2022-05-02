@@ -264,7 +264,7 @@ func (l *lineEditor) repositionCursor(stream io.Writer, toEnd bool) {
 }
 
 func (l *lineEditor) restore() {
-	_ = unix.IoctlSetTermios(unix.Stdin, unix.TCSETS, &l.defaultTermios)
+	_ = setTermios(&l.defaultTermios)
 	if enableBracketedPaste {
 		os.Stderr.Write([]byte("\x1b[?2004l"))
 	}
@@ -510,13 +510,13 @@ func (l *lineEditor) Initialize() {
 		return
 	}
 
-	t, _ := unix.IoctlGetTermios(unix.Stdin, unix.TCGETS)
+	t, _ := getTermios()
 	l.defaultTermios = *t
 
 	l.getTerminalSize()
 
 	t.Lflag &^= unix.ECHO | unix.ICANON
-	_ = unix.IoctlSetTermios(unix.Stdin, unix.TCSETS, t)
+	_ = setTermios(t)
 
 	l.termios = *t
 
