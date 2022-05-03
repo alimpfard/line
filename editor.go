@@ -1,6 +1,29 @@
 package line
 
-func NewEditor() Editor {
+type RefreshBehavior int
+type SignalHandler int
+
+const (
+	RefreshBehaviorLazy RefreshBehavior = iota
+	RefreshBehaviorEager
+
+	SignalHandlerEnabled SignalHandler = iota
+	SignalHandlerDisabled
+)
+
+type Config struct {
+	RefreshBehavior RefreshBehavior
+	SignalHandler   SignalHandler
+}
+
+func NewEditorWithConfig(config *Config) Editor {
+	if config == nil {
+		config = &Config{}
+	}
+
+	enableSignalHandling := config.SignalHandler == SignalHandlerEnabled
+	disableLazyRefresh := config.RefreshBehavior == RefreshBehaviorEager
+
 	editor := &lineEditor{
 		suggestionDisplay:  newSuggestionDisplay(),
 		suggestionManager:  newSuggestionManager(),
@@ -11,13 +34,18 @@ func NewEditor() Editor {
 		},
 		state:                                  inputStateFree,
 		previousFreeState:                      inputStateFree,
-		enableSignalHandling:                   true,
+		enableSignalHandling:                   enableSignalHandling,
 		resetBufferOnSearchEnd:                 true,
 		previousInterruptWasHandledAsInterrupt: true,
+		alwaysRefresh:                          disableLazyRefresh,
 	}
 	editor.getTerminalSize()
 	editor.suggestionDisplay.setVTSize(editor.numLines, editor.numColumns)
 	return editor
+}
+
+func NewEditor() Editor {
+	return NewEditorWithConfig(nil)
 }
 
 func MakeXtermColor(color XtermColor) Color {
