@@ -109,6 +109,9 @@ type lineEditor struct {
 	enableSignalHandling bool
 
 	currentMasks []maskEntry
+
+	inInterruptHandler              bool
+	interruptHandlerRequestedFinish bool
 }
 
 type loopExitCode int
@@ -198,7 +201,16 @@ func (l *lineEditor) handleInterruptEvent() {
 	_, _ = os.Stderr.Write([]byte("^C"))
 
 	if l.onInterruptHandled != nil {
+		l.inInterruptHandler = true
+		l.interruptHandlerRequestedFinish = false
+
 		l.onInterruptHandled()
+
+		l.inInterruptHandler = false
+	}
+
+	if l.interruptHandlerRequestedFinish {
+		return
 	}
 
 	l.buffer = make([]rune, 0)
@@ -446,6 +458,13 @@ func (l *lineEditor) interrupted() {
 
 	l.wasInterrupted = true
 	l.handleInterruptEvent()
+	if l.interruptHandlerRequestedFinish {
+		l.interruptHandlerRequestedFinish = false
+		l.finish = false
+		l.reallyQuitEventLoop()
+		return
+	}
+
 	if !l.finish || !l.previousInterruptWasHandledAsInterrupt {
 		return
 	}
@@ -463,7 +482,6 @@ func (l *lineEditor) interrupted() {
 	l.isEditing = false
 	l.restore()
 	l.loopChan <- loopExitCodeRetry
-
 }
 
 func (l *lineEditor) resized() {
@@ -1009,6 +1027,9 @@ func (l *lineEditor) TerminalSize() Winsize {
 }
 
 func (l *lineEditor) Finish() {
+	if l.inInterruptHandler {
+		l.interruptHandlerRequestedFinish = true
+	}
 	l.finish = true
 }
 

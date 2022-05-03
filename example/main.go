@@ -27,6 +27,11 @@ func main() {
 		}
 		editor.SetPrompt(fmt.Sprintf("I highlight x's (%d so far): ", count))
 	})
+	interrupted := false
+	editor.SetInterruptHandler(func() {
+		interrupted = true
+		editor.Finish()
+	})
 	editor.SetTabCompletionHandler(func(_ line.Editor) []line.Completion {
 		l := editor.Line()
 		parts := strings.Split(l, " ")
@@ -52,7 +57,12 @@ func main() {
 	})
 
 	for {
+		interrupted = false
 		line, err := editor.GetLine("I highlight x's (0 so far): ")
+		if interrupted {
+			println("interrupted")
+			continue
+		}
 		if err != nil {
 			println("Error:", err.Error())
 			break

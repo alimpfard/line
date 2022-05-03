@@ -6,7 +6,9 @@ type SignalHandler int
 const (
 	RefreshBehaviorLazy RefreshBehavior = iota
 	RefreshBehaviorEager
+)
 
+const (
 	SignalHandlerEnabled SignalHandler = iota
 	SignalHandlerDisabled
 )
