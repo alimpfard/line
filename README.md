@@ -11,7 +11,6 @@ LibLine is a full-featured terminal line editor with support for:
 The API is a complete clone of SerenityOS's LibLine, an example can be found in [example/](example/).
 
 This implementation is currently incomplete, and has missing or otherwise buggy features:
-- [ ] Bracketed paste is not implemented yet
 - [ ] LibLine's history file format is not implemented yet
 - [ ] Editor config is not implemented yet (`~/.config/lib/line.ini`)
 - [ ] Some editor internal functions are left unimplemented
