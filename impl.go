@@ -112,6 +112,8 @@ type lineEditor struct {
 
 	inInterruptHandler              bool
 	interruptHandlerRequestedFinish bool
+
+	allowPanics bool
 }
 
 type loopExitCode int
@@ -241,7 +243,11 @@ func (l *lineEditor) offsetInLine() uint32 {
 func (l *lineEditor) ensureFreeLinesFromOrigin(count uint32) {
 	if count > l.numLines {
 		// It's hopeless...
-		panic("ensureFreeLinesFromOrigin: count > l.numLines")
+		if l.allowPanics {
+			panic("ensureFreeLinesFromOrigin: count > l.numLines")
+		} else {
+			count = l.numLines
+		}
 	}
 
 	if l.originRow+count <= l.numLines {

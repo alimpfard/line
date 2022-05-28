@@ -2,6 +2,7 @@ package line
 
 type RefreshBehavior int
 type SignalHandler int
+type AllowPanics int
 
 const (
 	RefreshBehaviorLazy RefreshBehavior = iota
@@ -13,9 +14,15 @@ const (
 	SignalHandlerDisabled
 )
 
+const (
+	PanicsEnabled AllowPanics = iota
+	PanicsDisabled
+)
+
 type Config struct {
 	RefreshBehavior RefreshBehavior
 	SignalHandler   SignalHandler
+	AllowPanics     AllowPanics
 }
 
 func NewEditorWithConfig(config *Config) Editor {
@@ -25,6 +32,7 @@ func NewEditorWithConfig(config *Config) Editor {
 
 	enableSignalHandling := config.SignalHandler == SignalHandlerEnabled
 	disableLazyRefresh := config.RefreshBehavior == RefreshBehaviorEager
+	allowPanics := config.AllowPanics == PanicsEnabled
 
 	editor := &lineEditor{
 		suggestionDisplay:  newSuggestionDisplay(),
@@ -40,6 +48,7 @@ func NewEditorWithConfig(config *Config) Editor {
 		resetBufferOnSearchEnd:                 true,
 		previousInterruptWasHandledAsInterrupt: true,
 		alwaysRefresh:                          disableLazyRefresh,
+		allowPanics:                            allowPanics,
 	}
 	editor.getTerminalSize()
 	editor.suggestionDisplay.setVTSize(editor.numLines, editor.numColumns)
