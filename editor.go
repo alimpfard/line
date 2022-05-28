@@ -227,6 +227,7 @@ type Editor interface {
 	SetInterruptHandler(handler func())
 	SetRefreshHandler(handler func(editor Editor))
 
+	SetLine(string)
 	Line() string
 	LineUpTo(n uint32) string
 

@@ -12,6 +12,7 @@ func main() {
 		l := editor.Line()
 		editor.StripStyles()
 		count := 0
+		offset := -1
 		for i, ch := range []rune(l) {
 			if ch == 'x' {
 				count++
@@ -24,6 +25,12 @@ func main() {
 					Mask:            line.NewMask("r", line.MaskModeReplaceEachCodePointInSelection),
 				})
 			}
+			if ch == 'y' {
+				offset = i
+			}
+		}
+		if offset != -1 {
+			editor.SetLine(editor.LineUpTo(uint32(offset)))
 		}
 		editor.SetPrompt(fmt.Sprintf("I highlight x's (%d so far): ", count))
 	})
