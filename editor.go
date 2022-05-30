@@ -3,6 +3,7 @@ package line
 type RefreshBehavior int
 type SignalHandler int
 type AllowPanics int
+type BracketedPaste int
 
 const (
 	RefreshBehaviorLazy RefreshBehavior = iota
@@ -19,10 +20,16 @@ const (
 	PanicsDisabled
 )
 
+const (
+	BracketedPasteEnabled BracketedPaste = iota
+	BracketedPasteDisabled
+)
+
 type Config struct {
 	RefreshBehavior RefreshBehavior
 	SignalHandler   SignalHandler
 	AllowPanics     AllowPanics
+	BracketedPaste  BracketedPaste
 }
 
 func NewEditorWithConfig(config *Config) Editor {
@@ -33,6 +40,7 @@ func NewEditorWithConfig(config *Config) Editor {
 	enableSignalHandling := config.SignalHandler == SignalHandlerEnabled
 	disableLazyRefresh := config.RefreshBehavior == RefreshBehaviorEager
 	allowPanics := config.AllowPanics == PanicsEnabled
+	enableBracketedPaste := config.BracketedPaste == BracketedPasteEnabled
 
 	editor := &lineEditor{
 		suggestionDisplay:  newSuggestionDisplay(),
@@ -49,6 +57,7 @@ func NewEditorWithConfig(config *Config) Editor {
 		previousInterruptWasHandledAsInterrupt: true,
 		alwaysRefresh:                          disableLazyRefresh,
 		allowPanics:                            allowPanics,
+		enableBracketedPaste:                   enableBracketedPaste,
 	}
 	editor.getTerminalSize()
 	editor.suggestionDisplay.setVTSize(editor.numLines, editor.numColumns)

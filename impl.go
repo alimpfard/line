@@ -16,8 +16,6 @@ import (
 	"unicode/utf8"
 )
 
-const enableBracketedPaste = true
-
 type maskEntry struct {
 	start uint32
 	mask  *Mask
@@ -113,7 +111,8 @@ type lineEditor struct {
 	inInterruptHandler              bool
 	interruptHandlerRequestedFinish bool
 
-	allowPanics bool
+	allowPanics          bool
+	enableBracketedPaste bool
 }
 
 type loopExitCode int
@@ -283,7 +282,7 @@ func (l *lineEditor) repositionCursor(stream io.Writer, toEnd bool) {
 
 func (l *lineEditor) restore() {
 	_ = setTermios(&l.defaultTermios)
-	if enableBracketedPaste {
+	if l.enableBracketedPaste {
 		os.Stderr.Write([]byte("\x1b[?2004l"))
 	}
 	l.initialized = false
@@ -600,7 +599,7 @@ func (l *lineEditor) GetLine(prompt string) (string, error) {
 	oldLines := l.numLines
 	l.getTerminalSize()
 
-	if enableBracketedPaste {
+	if l.enableBracketedPaste {
 		os.Stderr.Write([]byte("\x1b[?2004h"))
 	}
 
@@ -1833,7 +1832,7 @@ func (l *lineEditor) handleReadEvent() {
 						l.searchOffset = 0
 						return iterationDecisionContinue
 					}
-					if enableBracketedPaste {
+					if l.enableBracketedPaste {
 						// ^[[200~: Start paste mode
 						// ^[[201~: Stop paste mode
 						if !isInPaste && param1 == 200 {
