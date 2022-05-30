@@ -856,8 +856,8 @@ func (l *lineEditor) SetRefreshHandler(handler func(editor Editor)) {
 }
 
 func (l *lineEditor) SetLine(line string) {
-	l.cursor--
 	l.inlineSearchCursor = min(l.cursor, uint32(len(line)))
+	l.cursor = l.inlineSearchCursor
 	l.charsTouchedInTheMiddle = uint32(len(l.buffer))
 	l.refreshNeeded = true
 	l.buffer = []rune(line)
