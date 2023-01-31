@@ -625,7 +625,7 @@ func (l *lineEditor) GetLine(prompt string) (string, error) {
 	l.loopChan = make(chan loopExitCode, 1)
 	defer close(l.loopChan)
 
-	l.laterChan = make(chan laterEventCode, 1)
+	l.laterChan = make(chan laterEventCode, 4)
 	defer close(l.laterChan)
 
 	go func() {
@@ -2050,7 +2050,9 @@ func (l *lineEditor) handleReadEvent() {
 	}
 
 	if len(l.incompleteData) != 0 && !l.finish {
-		l.laterChan <- laterEventCodeTryUpdateOnce
+		if len(l.laterChan) < 4 {
+			l.laterChan <- laterEventCodeTryUpdateOnce
+		}
 	}
 }
 
