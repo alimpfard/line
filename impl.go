@@ -1645,40 +1645,42 @@ func (l *lineEditor) handleReadEvent() {
 	var nread int
 	var err error
 
-	if len(l.incompleteData) == 0 {
+	for utf8.RuneCount(l.incompleteData) == 0 {
 		nread, err = unix.Read(unix.Stdin, keyBuf)
 		if err == nil && nread == 0 {
-			return
+			break
 		}
+
 		// FIXME: Somehow this sneaks in here when the user presses Ctrl-C
 		if nread == 1 && keyBuf[0] == byte(ctrl('C')) {
 			l.handleInterruptEvent()
-			return
+			break
 		}
-	}
 
-	if err != nil {
-		if err == syscall.EINTR {
-			if !l.wasInterrupted {
-				if l.wasResized {
+		if err != nil {
+			if err == syscall.EINTR {
+				if !l.wasInterrupted {
+					if l.wasResized {
+						return
+					}
+
+					l.Finish()
 					return
 				}
 
-				l.Finish()
+				l.handleInterruptEvent()
 				return
 			}
 
-			l.handleInterruptEvent()
+			fmt.Fprintf(os.Stderr, "Error reading from stdin: %s\n", err)
+			l.inputError = err
+			l.Finish()
 			return
 		}
 
-		fmt.Fprintf(os.Stderr, "Error reading from stdin: %s\n", err)
-		l.inputError = err
-		l.Finish()
-		return
+		l.incompleteData = append(l.incompleteData, keyBuf[:nread]...)
 	}
 
-	l.incompleteData = append(l.incompleteData, keyBuf[:nread]...)
 	availableBytes := len(l.incompleteData)
 
 	if availableBytes == 0 {
